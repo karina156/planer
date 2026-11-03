@@ -4,6 +4,6 @@
 
 Сайт: https://karina156.github.io/planer/ · английский: https://karina156.github.io/angl/
 
-Без входа страница пустая. Данные появляются только после входа через Google и хранятся в Firebase (Firestore, `users/{uid}/data/planer`). Правила базы в `firestore.rules`: каждый вошедший читает и пишет только свои документы.
+Без входа страница пустая. Вход по паролю прямо на сайте. Данные шифруются в браузере (AES-GCM, ключ из пароля через PBKDF2-SHA256, 600 000 итераций) и лежат в ветке `data` файлом `data.enc`. Без пароля их не прочитать. Пароль никуда не отправляется.
 
-Настройка: вставить `firebaseConfig` из Firebase Console в `firebase-config.js`.
+Сохранение на GitHub идёт через личный ключ (fine-grained token, репозитории planer и angl, Contents: Read and write). Ключ хранится только в браузере устройства.

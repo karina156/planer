@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<script src="./firebase-config.js"></script><script src="./shim.js"></script>
+<script src="./shim.js"></script>
 <title>Планер</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="google" content="notranslate">
@@ -780,7 +780,7 @@ const CATRX={food:/продукт|еда|магазин|пятер|перекр|
 function catOf(i){if(i.cat&&S.budget.cats.some(c=>c.id==i.cat))return i.cat;const t=(i.title||"").toLowerCase();for(const k in CATRX)if(CATRX[k].test(t)&&S.budget.cats.some(c=>c.id==k))return k;return S.budget.cats.some(c=>c.id=="other")?"other":S.budget.cats[0].id}
 fixState();
 let docRef=null,saveTimer=null;
-function setSync(ok){const el=$("sync");if(!el)return;el.textContent=ok?"Синхронизировано с аккаунтом":"В этом браузере";el.title=ok?"Записи хранятся в твоём аккаунте Claude и видны на любом устройстве":"Записи пока хранятся только в этом браузере";el.classList.toggle("on",ok)}
+function setSync(ok){const el=$("sync");if(!el)return;el.textContent=ok?"Сохраняется":"В этом браузере";el.title=ok?"Записи хранятся в зашифрованном виде на GitHub и видны на любом устройстве":"Изменения не сохраняются: войди и добавь ключ GitHub";el.classList.toggle("on",ok)}
 function save(){S.upd=Date.now();try{localStorage.setItem("planer-v1",JSON.stringify(S))}catch(e){}
   if(docRef){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{docRef.set({v:1,state:JSON.stringify(S),at:Date.now()}).then(()=>setSync(true)).catch(()=>setSync(false))},800)}}
 /* ---------- time helpers ---------- */
