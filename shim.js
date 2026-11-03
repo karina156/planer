@@ -54,10 +54,10 @@
   const ready=(async()=>{const raw=ls.get(K_KEY);if(!raw)return null;try{key=await importKey(raw)}catch(e){key=null}return key})();
 
   /* Saves are batched: the page writes on every change, GitHub gets at most one commit per pause. */
-  let pendingDoc=null,flushTimer=null,flushing=null,lastErr=null;
+  let pendingDoc=null,flushTimer=null,flushing=null,lastErr=null,frozen=false;
   function schedule(){clearTimeout(flushTimer);flushTimer=setTimeout(flush,8000)}
   async function flush(keepalive){
-    clearTimeout(flushTimer);if(!pendingDoc||!key)return;if(flushing){await flushing;if(!pendingDoc)return}
+    clearTimeout(flushTimer);if(frozen||!pendingDoc||!key)return;if(flushing){await flushing;if(!pendingDoc)return}
     const doc=pendingDoc;
     flushing=(async()=>{const text=await enc(key,doc);ls.set(K_PEND+NAME,text);
       try{await writeFile(REPO,"data.enc",text,keepalive);if(pendingDoc===doc){pendingDoc=null;ls.del(K_PEND+NAME)}lastErr=null;status()}
@@ -82,7 +82,7 @@
           try{const S=JSON.parse(d.state);S.upd=Date.now()+1000;d={...d,state:JSON.stringify(S)}}catch(e){}
           return {exists:true,data:()=>d};
         },
-        async set(o){pendingDoc=o;schedule();if(!token())throw Object.assign(new Error("no token"),{code:"token"})}
+        async set(o){if(frozen)return;pendingDoc=o;schedule();if(!token())throw Object.assign(new Error("no token"),{code:"token"})}
       }}}},
     async downloads(){return {async save({filename,data}){const b=data instanceof Blob?data:new Blob([data]);const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=filename;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);return {status:"saved"}}}}
   };
@@ -148,6 +148,25 @@
     });
   }
 
+  /* One-time move of the old data: a link with #t=<code> opens transfer.enc files encrypted with that code,
+     re-encrypts them with the password key into data.enc and deletes the transfer files. */
+  const TCODE=(/[#&]t=([A-Za-z0-9_-]{20,})/.exec(location.hash)||[])[1]||null;
+  async function delFile(repo,path){const t=token();if(!t)return;await readFile(repo,path).catch(()=>{});const sha=shas[repo+path];if(!sha)return;
+    await fetch(api(repo,path),{method:"DELETE",headers:{Authorization:"Bearer "+t,Accept:"application/vnd.github+json","Content-Type":"application/json"},body:JSON.stringify({message:"remove "+path,branch:"data",sha})})}
+  async function runTransfer(){
+    const raw=unb64(TCODE.replace(/-/g,"+").replace(/_/g,"/")+"===".slice((TCODE.length+3)%4));
+    const tk=await crypto.subtle.importKey("raw",raw,{name:"AES-GCM"},false,["decrypt"]);
+    let n=0;
+    for(const [repo,name] of [["planer","planer"],["angl","ielts"]]){
+      const txt=await readFile(repo,"transfer.enc");if(!txt)continue;
+      let doc;try{doc=await dec(tk,txt)}catch(e){throw new Error("code")}
+      const S=JSON.parse(doc.state);S.upd=Date.now();doc={v:1,state:JSON.stringify(S),at:Date.now()};
+      await writeFile(repo,"data.enc",await enc(key,doc));ls.del(K_PEND+name);if(name==NAME)pendingDoc=null;
+      await delFile(repo,"transfer.enc").catch(()=>{});n++;
+    }
+    return n;
+  }
+
   addEventListener("DOMContentLoaded",async()=>{
     const st=document.createElement("style");st.textContent=css;document.head.appendChild(st);
     bar=document.createElement("div");bar.className="acct";
@@ -163,10 +182,19 @@
       imp.onclick=()=>{const i=document.createElement("input");i.type="file";i.accept=".json,application/json";i.onchange=async()=>{try{const o=JSON.parse(await i.files[0].text());
         const doc=o.state?o:{v:1,state:JSON.stringify(o),at:Date.now()};const S=JSON.parse(doc.state);S.upd=Date.now();doc.state=JSON.stringify(S);doc.at=Date.now();
         pendingDoc=doc;await flush();location.reload()}catch(e){note(e&&e.code=="token"?"Сначала добавь ключ GitHub":"Не получилось загрузить файл")}};i.click()};
+      if(TCODE){
+        if(!token()){askToken();note("Чтобы перенести данные, вставь ключ GitHub и открой ссылку ещё раз",9000);return}
+        frozen=true;clearTimeout(flushTimer);pendingDoc=null;
+        const bn=document.createElement("div");bn.className="acctbanner";bn.textContent="Переношу твои дела…";document.body.appendChild(bn);
+        try{const n=await runTransfer();history.replaceState(null,"",location.pathname+location.search);
+          if(n){bn.textContent="Готово, дела перенесены";setTimeout(()=>location.reload(),800)}else{bn.remove();note("Перенос уже сделан, всё на месте")}}
+        catch(e){frozen=false;bn.remove();note(e.message=="code"?"Ссылка для переноса не подошла":"Не получилось перенести, проверь интернет и ключ GitHub",9000)}
+        return;
+      }
       if(!token())note("Ты вошла, но на этом устройстве нет ключа GitHub: изменения не сохранятся. Нажми «Ключ GitHub».",9000);
     }else{
       who.onclick=()=>signIn().catch(()=>note("Нет связи с GitHub, попробуй позже"));
-      const bn=document.createElement("div");bn.className="acctbanner";bn.innerHTML=`Это пустой планер. Войди, чтобы видеть и сохранять свои данные.<button>Войти</button>`;bn.querySelector("button").onclick=()=>{bn.remove();who.click()};document.body.appendChild(bn);
+      const bn=document.createElement("div");bn.className="acctbanner";bn.innerHTML=TCODE?`Войди, и твои дела перенесутся сюда.<button>Войти</button>`:`Это пустой планер. Войди, чтобы видеть и сохранять свои данные.<button>Войти</button>`;bn.querySelector("button").onclick=()=>{bn.remove();who.click()};document.body.appendChild(bn);
     }
   });
 })();
